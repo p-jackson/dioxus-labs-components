@@ -245,9 +245,8 @@ pub fn Slider(props: SliderProps) -> Element {
         let SliderValue::Single(current_value) = granular_value.cloned();
         let new = current_value + delta;
         granular_value.set(SliderValue::Single(new));
-        let clamped = new.clamp((ctx.min)(), (ctx.max)());
-        let stepped = (clamped / (ctx.step)()).round() * (ctx.step)();
-        ctx.set_value.call(SliderValue::Single(stepped));
+        ctx.set_value
+            .call(SliderValue::Single(ctx.clamp_and_snap(new)));
     });
 
     rsx! {
@@ -319,8 +318,7 @@ pub fn Slider(props: SliderProps) -> Element {
                         };
                         let new = (offset / size) * ctx.range_size() + (ctx.min)();
                         granular_value.set(SliderValue::Single(new));
-                        let stepped = (new / (ctx.step)()).round() * (ctx.step)();
-                        ctx.set_value.call(SliderValue::Single(stepped));
+                        ctx.set_value.call(SliderValue::Single(ctx.snap(new)));
                     }
 
                     dragging.set(true);
@@ -451,14 +449,12 @@ pub fn SliderRange(props: SliderRangeProps) -> Element {
     };
 
     let style = use_memo(move || {
-        let min = (ctx.min)();
-        let max = (ctx.max)();
         let (start, end) = match (ctx.value)() {
-            SliderValue::Single(v) => (min, v),
+            SliderValue::Single(v) => ((ctx.min)(), v),
         };
 
-        let start_percent = ((start - min) / (max - min) * 100.0).clamp(0.0, 100.0);
-        let end_percent = ((end - min) / (max - min) * 100.0).clamp(0.0, 100.0);
+        let start_percent = ctx.as_percent(start);
+        let end_percent = ctx.as_percent(end);
 
         if ctx.horizontal {
             format!("left: {}%; right: {}%", start_percent, 100.0 - end_percent)
@@ -542,7 +538,7 @@ pub fn SliderThumb(props: SliderThumbProps) -> Element {
         (SliderValue::Single(v), _) => v,
     });
 
-    let percent = ((value() - (ctx.min)()) / ((ctx.max)() - (ctx.min)()) * 100.0).clamp(0.0, 100.0);
+    let percent = ctx.as_percent(value());
     let style = if ctx.horizontal {
         format!("left: {percent}%")
     } else {
@@ -606,7 +602,7 @@ pub fn SliderThumb(props: SliderThumbProps) -> Element {
                 }
 
                 // Handle keyboard navigation
-                let mut new_value = match key {
+                let new_value = match key {
                     Key::ArrowUp | Key::ArrowRight => {
                         value() + step
                     }
@@ -616,12 +612,8 @@ pub fn SliderThumb(props: SliderThumbProps) -> Element {
                     _ => return,
                 };
 
-                // Clamp the new value to the range
-                new_value = new_value.clamp((ctx.min)(), (ctx.max)());
-                let stepped_value = (new_value / (ctx.step)()).round() * (ctx.step)();
-
-                // Update the value
-                ctx.set_value.call(SliderValue::Single(stepped_value));
+                // Clamp and snap the new value
+                ctx.set_value.call(SliderValue::Single(ctx.clamp_and_snap(new_value)));
             },
             ..props.attributes,
             {props.children}
@@ -656,5 +648,21 @@ impl SliderContext {
     fn range_size(&self) -> f64 {
         let [range_min, range_max] = self.range();
         range_max - range_min
+    }
+
+    fn snap(&self, value: f64) -> f64 {
+        let step = (self.step)();
+        (value / step).round() * step
+    }
+
+    fn clamp_and_snap(&self, value: f64) -> f64 {
+        let clamped = value.clamp((self.min)(), (self.max)());
+        self.snap(clamped)
+    }
+
+    fn as_percent(&self, value: f64) -> f64 {
+        let min = (self.min)();
+        let max = (self.max)();
+        ((value - min) / (max - min) * 100.0).clamp(0.0, 100.0)
     }
 }
